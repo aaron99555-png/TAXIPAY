@@ -1,561 +1,490 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { PlusCircle, Trash2, CheckCircle2, Wallet, CreditCard, Layers, Calendar, DollarSign, Clock, Filter, CalendarDays, Calculator, X, Delete } from 'lucide-react';
-
-// --- 子元件：計算機模組 ---
-const CalculatorPopup = ({ isOpen, onClose, onApply }) => {
-  const [display, setDisplay] = useState('0');
-  const [waitingForOperand, setWaitingForOperand] = useState(true);
-  const [pendingOperator, setPendingOperator] = useState(null);
-  const [resultValue, setResultValue] = useState(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      setDisplay('0');
-      setWaitingForOperand(true);
-      setPendingOperator(null);
-      setResultValue(null);
-    }
-  }, [isOpen]);
-
-  // 封裝邏輯以便 useEffect 使用
-  const inputDigit = useCallback((digit) => {
-    if (waitingForOperand) {
-      setDisplay(String(digit));
-      setWaitingForOperand(false);
-    } else {
-      setDisplay(display === '0' ? String(digit) : display + digit);
-    }
-  }, [display, waitingForOperand]);
-
-  const calculate = (left, op, right) => {
-    switch (op) {
-      case '+': return left + right;
-      case '-': return left - right;
-      case '*': return left * right;
-      case '/': return left / right;
-      default: return right;
-    }
-  };
-
-  const performOperation = useCallback((nextOperator) => {
-    const inputValue = parseFloat(display);
-
-    if (resultValue === null) {
-      setResultValue(inputValue);
-    } else if (pendingOperator) {
-      const currentValue = resultValue || 0;
-      const newValue = calculate(currentValue, pendingOperator, inputValue);
-      setResultValue(newValue);
-      setDisplay(String(newValue));
-    }
-
-    setWaitingForOperand(true);
-    setPendingOperator(nextOperator);
-  }, [display, pendingOperator, resultValue]);
-
-  const handleEqual = useCallback(() => {
-    const inputValue = parseFloat(display);
-    if (pendingOperator && resultValue !== null) {
-      const newValue = calculate(resultValue, pendingOperator, inputValue);
-      setResultValue(null);
-      setPendingOperator(null);
-      setDisplay(String(newValue));
-      return newValue;
-    }
-    return inputValue;
-  }, [display, pendingOperator, resultValue]);
-
-  const handleClear = useCallback(() => {
-    setDisplay('0');
-    setResultValue(null);
-    setPendingOperator(null);
-    setWaitingForOperand(true);
-  }, []);
-
-  const handleBackspace = useCallback(() => {
-    if (waitingForOperand) return;
-    setDisplay(display.length > 1 ? display.slice(0, -1) : '0');
-  }, [display, waitingForOperand]);
-
-  const handleConfirm = useCallback(() => {
-    // 確保最後一次運算有完成
-    let finalValue = parseFloat(display);
-    if (pendingOperator && resultValue !== null) {
-       finalValue = calculate(resultValue, pendingOperator, finalValue);
-    }
-    onApply(Math.round(finalValue)); // 取整數
-    onClose();
-  }, [display, pendingOperator, resultValue, onApply, onClose]);
-
-  // --- 鍵盤監聽 ---
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e) => {
-      const key = e.key;
-
-      if (/\d/.test(key)) {
-        e.preventDefault();
-        inputDigit(parseInt(key));
-      } else if (['+', '-', '*', '/', 'x'].includes(key)) {
-        e.preventDefault();
-        performOperation(key === 'x' ? '*' : key);
-      } else if (key === 'Enter' || key === '=') {
-        e.preventDefault();
-        // 智慧 Enter 邏輯：有未完成的運算先算等於，否則確認送出
-        if (pendingOperator) {
-          handleEqual();
-        } else {
-          handleConfirm();
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日車資收入紀錄表</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body { background-color: #020617; } /* slate-950 */
+        /* 隱藏數字輸入框的上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
         }
-      } else if (key === 'Backspace') {
-        e.preventDefault();
-        handleBackspace();
-      } else if (key === 'Escape' || key.toLowerCase() === 'c') {
-        e.preventDefault();
-        // 如果是 C 鍵或已經歸零了再按 Esc 才關閉，否則先歸零
-        if (key === 'Escape') onClose();
-        else handleClear();
-      }
-    };
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, inputDigit, performOperation, handleEqual, handleConfirm, handleBackspace, handleClear, onClose, pendingOperator]);
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
 
+        // --- Icons (SVG Components) ---
+        const Icon = ({ path, size = 24, className = "" }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width={size} 
+                height={size} 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
+            >
+                {path}
+            </svg>
+        );
 
-  if (!isOpen) return null;
+        const Icons = {
+            PlusCircle: (props) => <Icon path={<><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></>} {...props} />,
+            Trash2: (props) => <Icon path={<><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-1 1-1h6c1 0 1 1 1 1v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></>} {...props} />,
+            CheckCircle2: (props) => <Icon path={<><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></>} {...props} />,
+            Wallet: (props) => <Icon path={<><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></>} {...props} />,
+            CreditCard: (props) => <Icon path={<><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></>} {...props} />,
+            Layers: (props) => <Icon path={<><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></>} {...props} />,
+            DollarSign: (props) => <Icon path={<><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>} {...props} />,
+            Clock: (props) => <Icon path={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>} {...props} />,
+            Filter: (props) => <Icon path={<><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></>} {...props} />,
+            CalendarDays: (props) => <Icon path={<><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></>} {...props} />,
+            Calculator: (props) => <Icon path={<><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></>} {...props} />,
+            X: (props) => <Icon path={<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>} {...props} />,
+            Delete: (props) => <Icon path={<><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></>} {...props} />
+        };
 
-  const btnClass = "h-14 rounded-xl text-xl font-bold transition-all active:scale-95 flex items-center justify-center shadow-sm select-none";
-  const numBtnClass = `${btnClass} bg-slate-700 text-white hover:bg-slate-600`;
-  const opBtnClass = `${btnClass} bg-indigo-900/50 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-800/50`;
-  const actionBtnClass = `${btnClass} bg-rose-900/50 text-rose-300 border border-rose-500/30 hover:bg-rose-800/50`;
+        // --- 子元件：計算機模組 ---
+        const CalculatorPopup = ({ isOpen, onClose, onApply }) => {
+            const [display, setDisplay] = useState('0');
+            const [waitingForOperand, setWaitingForOperand] = useState(true);
+            const [pendingOperator, setPendingOperator] = useState(null);
+            const [resultValue, setResultValue] = useState(null);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 w-full max-w-xs rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col">
-        {/* 顯示螢幕 */}
-        <div className="bg-slate-950 p-6 flex flex-col items-end justify-center border-b border-slate-800 h-28 relative">
-           <button onClick={onClose} className="absolute top-4 left-4 text-slate-500 hover:text-slate-300" title="關閉 (Esc)">
-             <X size={20} />
-           </button>
-           <div className="text-slate-400 text-xs h-4 mb-1">
-             {resultValue !== null && pendingOperator ? `${resultValue} ${pendingOperator}` : ''}
-           </div>
-           <div className="text-4xl font-bold text-white tracking-wider truncate w-full text-right">{display}</div>
-        </div>
+            useEffect(() => {
+                if (isOpen) {
+                    setDisplay('0');
+                    setWaitingForOperand(true);
+                    setPendingOperator(null);
+                    setResultValue(null);
+                }
+            }, [isOpen]);
 
-        {/* 鍵盤區 */}
-        <div className="p-4 grid grid-cols-4 gap-3 bg-slate-900">
-          <button onClick={handleClear} className={`${actionBtnClass} col-span-2`}>AC (C)</button>
-          <button onClick={handleBackspace} className={`${actionBtnClass}`}><Delete size={20}/></button>
-          <button onClick={() => performOperation('/')} className={opBtnClass}>÷</button>
+            const inputDigit = useCallback((digit) => {
+                if (waitingForOperand) {
+                    setDisplay(String(digit));
+                    setWaitingForOperand(false);
+                } else {
+                    setDisplay(display === '0' ? String(digit) : display + digit);
+                }
+            }, [display, waitingForOperand]);
 
-          <button onClick={() => inputDigit(7)} className={numBtnClass}>7</button>
-          <button onClick={() => inputDigit(8)} className={numBtnClass}>8</button>
-          <button onClick={() => inputDigit(9)} className={numBtnClass}>9</button>
-          <button onClick={() => performOperation('*')} className={opBtnClass}>×</button>
+            const calculate = (left, op, right) => {
+                switch (op) {
+                    case '+': return left + right;
+                    case '-': return left - right;
+                    case '*': return left * right;
+                    case '/': return left / right;
+                    default: return right;
+                }
+            };
 
-          <button onClick={() => inputDigit(4)} className={numBtnClass}>4</button>
-          <button onClick={() => inputDigit(5)} className={numBtnClass}>5</button>
-          <button onClick={() => inputDigit(6)} className={numBtnClass}>6</button>
-          <button onClick={() => performOperation('-')} className={opBtnClass}>-</button>
+            const performOperation = useCallback((nextOperator) => {
+                const inputValue = parseFloat(display);
 
-          <button onClick={() => inputDigit(1)} className={numBtnClass}>1</button>
-          <button onClick={() => inputDigit(2)} className={numBtnClass}>2</button>
-          <button onClick={() => inputDigit(3)} className={numBtnClass}>3</button>
-          <button onClick={() => performOperation('+')} className={opBtnClass}>+</button>
+                if (resultValue === null) {
+                    setResultValue(inputValue);
+                } else if (pendingOperator) {
+                    const currentValue = resultValue || 0;
+                    const newValue = calculate(currentValue, pendingOperator, inputValue);
+                    setResultValue(newValue);
+                    setDisplay(String(newValue));
+                }
 
-          <button onClick={() => inputDigit(0)} className={`${numBtnClass} col-span-2`}>0</button>
-          <button onClick={handleEqual} className={`${opBtnClass} bg-indigo-600 text-white border-transparent`}>=</button>
-          
-          <button 
-            onClick={handleConfirm}
-            className="col-span-4 mt-2 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-900/50 active:scale-95 transition-all flex items-center justify-center gap-2"
-          >
-            <CheckCircle2 size={20} />
-            確認帶入 (Enter)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+                setWaitingForOperand(true);
+                setPendingOperator(nextOperator);
+            }, [display, pendingOperator, resultValue]);
 
+            const handleEqual = useCallback(() => {
+                const inputValue = parseFloat(display);
+                if (pendingOperator && resultValue !== null) {
+                    const newValue = calculate(resultValue, pendingOperator, inputValue);
+                    setResultValue(null);
+                    setPendingOperator(null);
+                    setDisplay(String(newValue));
+                    return newValue;
+                }
+                return inputValue;
+            }, [display, pendingOperator, resultValue]);
 
-const App = () => {
-  const getTodayString = () => new Date().toISOString().split('T')[0];
+            const handleClear = useCallback(() => {
+                setDisplay('0');
+                setResultValue(null);
+                setPendingOperator(null);
+                setWaitingForOperand(true);
+            }, []);
 
-  const [records, setRecords] = useState([]);
-  const [filterStartDate, setFilterStartDate] = useState(getTodayString());
-  const [filterEndDate, setFilterEndDate] = useState(getTodayString());
+            const handleBackspace = useCallback(() => {
+                if (waitingForOperand) return;
+                setDisplay(display.length > 1 ? display.slice(0, -1) : '0');
+            }, [display, waitingForOperand]);
 
-  const [recordDate, setRecordDate] = useState(getTodayString());
-  const [platform, setPlatform] = useState('大車隊');
-  const [paymentMethod, setPaymentMethod] = useState('現金');
-  const [amount, setAmount] = useState('');
-  const [commissionRate, setCommissionRate] = useState(15); 
-  const [isSettled, setIsSettled] = useState(true);
-  
-  // 計算機狀態
-  const [showCalculator, setShowCalculator] = useState(false);
+            const handleConfirm = useCallback(() => {
+                let finalValue = parseFloat(display);
+                if (pendingOperator && resultValue !== null) {
+                    finalValue = calculate(resultValue, pendingOperator, finalValue);
+                }
+                onApply(Math.round(finalValue));
+                onClose();
+            }, [display, pendingOperator, resultValue, onApply, onClose]);
 
-  const platforms = ['大車隊', 'Line', 'yuxi', '呼叫', '其他'];
-  const methods = [
-    { id: '現金', icon: <DollarSign size={16} /> },
-    { id: '悠遊卡', icon: <Wallet size={16} /> },
-    { id: '信用卡', icon: <CreditCard size={16} /> }
-  ];
+            useEffect(() => {
+                if (!isOpen) return;
+                const handleKeyDown = (e) => {
+                    const key = e.key;
+                    if (/\d/.test(key)) {
+                        e.preventDefault();
+                        inputDigit(parseInt(key));
+                    } else if (['+', '-', '*', '/', 'x'].includes(key)) {
+                        e.preventDefault();
+                        performOperation(key === 'x' ? '*' : key);
+                    } else if (key === 'Enter' || key === '=') {
+                        e.preventDefault();
+                        if (pendingOperator) {
+                            handleEqual();
+                        } else {
+                            handleConfirm();
+                        }
+                    } else if (key === 'Backspace') {
+                        e.preventDefault();
+                        handleBackspace();
+                    } else if (key === 'Escape' || key.toLowerCase() === 'c') {
+                        e.preventDefault();
+                        if (key === 'Escape') onClose();
+                        else handleClear();
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [isOpen, inputDigit, performOperation, handleEqual, handleConfirm, handleBackspace, handleClear, onClose, pendingOperator]);
 
-  useEffect(() => {
-    if (platform === '大車隊') {
-      setCommissionRate(15);
-    } else {
-      setCommissionRate(0);
-    }
-  }, [platform]);
+            if (!isOpen) return null;
 
-  useEffect(() => {
-    if (paymentMethod === '現金') {
-      setIsSettled(true);
-    } else {
-      setIsSettled(false);
-    }
-  }, [paymentMethod]);
+            const btnClass = "h-14 rounded-xl text-xl font-bold transition-all active:scale-95 flex items-center justify-center shadow-sm select-none cursor-pointer";
+            const numBtnClass = `${btnClass} bg-slate-700 text-white hover:bg-slate-600`;
+            const opBtnClass = `${btnClass} bg-indigo-900/50 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-800/50`;
+            const actionBtnClass = `${btnClass} bg-rose-900/50 text-rose-300 border border-rose-500/30 hover:bg-rose-800/50`;
 
-  const handleAddRecord = (e) => {
-    e.preventDefault();
-    if (!amount || isNaN(amount)) return;
-
-    const grossAmount = parseInt(amount);
-    const commissionFee = platform === '大車隊' ? Math.round(grossAmount * (commissionRate / 100)) : 0;
-    const netAmount = grossAmount - commissionFee;
-
-    const newRecord = {
-      id: Date.now(),
-      date: recordDate,
-      time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
-      platform,
-      paymentMethod,
-      grossAmount,     
-      commissionRate: platform === '大車隊' ? commissionRate : 0, 
-      commissionFee,   
-      netAmount,       
-      isSettled: paymentMethod === '現金' ? true : isSettled,
-    };
-
-    setRecords([newRecord, ...records]);
-    setAmount('');
-  };
-
-  const toggleRecordSettled = (id) => {
-    setRecords(records.map(record => {
-      if (record.id === id) {
-        return { ...record, isSettled: !record.isSettled };
-      }
-      return record;
-    }));
-  };
-
-  const handleDelete = (id) => {
-    setRecords(records.filter(record => record.id !== id));
-  };
-
-  const filteredRecords = useMemo(() => {
-    return records.filter(record => {
-      return record.date >= filterStartDate && record.date <= filterEndDate;
-    }).sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return b.id - a.id;
-    });
-  }, [records, filterStartDate, filterEndDate]);
-
-  const totalGross = filteredRecords.reduce((sum, r) => sum + r.grossAmount, 0); 
-  const totalNet = filteredRecords.reduce((sum, r) => sum + r.netAmount, 0);     
-  const totalCommission = filteredRecords.reduce((sum, r) => sum + r.commissionFee, 0); 
-  const cashOnHand = filteredRecords.filter(r => r.paymentMethod === '現金').reduce((sum, r) => sum + r.grossAmount, 0);
-  const pendingSettlement = filteredRecords.filter(r => !r.isSettled).reduce((sum, r) => sum + r.netAmount, 0);
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans p-4 pb-24 relative">
-      {/* 計算機彈窗 */}
-      <CalculatorPopup 
-        isOpen={showCalculator} 
-        onClose={() => setShowCalculator(false)} 
-        onApply={(val) => setAmount(val.toString())}
-      />
-
-      <div className="max-w-md mx-auto space-y-5">
-        
-        {/* 標題與全域篩選區 */}
-        <header className="space-y-4 pt-2">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-white tracking-wider flex items-center gap-2">
-              <Layers className="text-indigo-400" />
-              營收紀錄表
-            </h1>
-          </div>
-
-          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
-            <div className="flex items-center gap-2 text-slate-400">
-               <Filter size={16} />
-               <span className="text-xs font-medium">統計區間</span>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-              <input 
-                type="date" 
-                value={filterStartDate}
-                onChange={(e) => setFilterStartDate(e.target.value)}
-                className="bg-transparent text-white text-sm focus:outline-none w-28 text-center"
-              />
-              <span className="text-slate-500">~</span>
-              <input 
-                type="date" 
-                value={filterEndDate}
-                onChange={(e) => setFilterEndDate(e.target.value)}
-                className="bg-transparent text-white text-sm focus:outline-none w-28 text-center"
-              />
-            </div>
-          </div>
-        </header>
-
-        {/* 統計儀表板 */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 rounded-bl-full -mr-4 -mt-4"></div>
-            <span className="text-xs text-slate-400 block mb-1">區間總流水 (未扣)</span>
-            <span className="text-2xl font-bold text-white">${totalGross}</span>
-          </div>
-          <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-3 rounded-2xl border border-indigo-700/50 shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-bl-full -mr-4 -mt-4"></div>
-            <span className="text-xs text-indigo-200 block mb-1">區間淨收入 (扣除後)</span>
-            <span className="text-2xl font-bold text-white">${totalNet}</span>
-          </div>
-          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex flex-col justify-center">
-            <span className="text-xs text-emerald-400 mb-1">手頭現金 (Gross)</span>
-            <span className="text-lg font-bold text-emerald-300">${cashOnHand}</span>
-          </div>
-          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex flex-col justify-center">
-            <span className="text-xs text-amber-400 mb-1">未入帳 (Net)</span>
-            <span className="text-lg font-bold text-amber-300">${pendingSettlement}</span>
-          </div>
-        </div>
-
-        {/* 輸入區域 */}
-        <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl space-y-5 relative">
-          <div className="absolute top-0 right-0 px-4 py-2 bg-slate-800 rounded-bl-2xl rounded-tr-2xl text-[10px] text-slate-400 font-mono tracking-widest border-l border-b border-slate-700">
-            NEW RECORD
-          </div>
-          
-          <div className="grid grid-cols-1 gap-4 mt-2">
-             <div>
-               <label className="text-[10px] font-bold text-slate-500 mb-2 block uppercase tracking-wider">平台</label>
-               <div className="grid grid-cols-5 gap-1">
-                 {platforms.map((p) => (
-                   <button
-                     key={p}
-                     onClick={() => setPlatform(p)}
-                     className={`py-2 px-0 rounded-lg text-xs font-medium transition-all duration-200 ${
-                       platform === p 
-                         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' 
-                         : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                     }`}
-                   >
-                     {p}
-                   </button>
-                 ))}
-               </div>
-             </div>
-
-             <div>
-               <label className="text-[10px] font-bold text-slate-500 mb-2 block uppercase tracking-wider">支付</label>
-               <div className="flex bg-slate-800 p-1 rounded-xl">
-                 {methods.map((m) => (
-                   <button
-                     key={m.id}
-                     onClick={() => setPaymentMethod(m.id)}
-                     className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all duration-200 ${
-                       paymentMethod === m.id 
-                         ? 'bg-slate-700 text-white shadow-sm' 
-                         : 'text-slate-500 hover:text-slate-300'
-                     }`}
-                   >
-                     {m.icon}
-                     {m.id}
-                   </button>
-                 ))}
-               </div>
-             </div>
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 mb-1 block uppercase tracking-wider flex items-center gap-1">
-              <CalendarDays size={12} />
-              營收日期 (補登可選)
-            </label>
-            <input 
-              type="date" 
-              value={recordDate}
-              onChange={(e) => setRecordDate(e.target.value)}
-              className="w-full bg-slate-800 text-white text-sm font-medium py-2 px-3 rounded-xl border border-slate-700 focus:border-indigo-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex items-end gap-3">
-            {/* 金額欄位 (整合計算機) */}
-            <div className="flex-[2]">
-              <label className="text-[10px] font-bold text-slate-500 mb-1 block uppercase flex justify-between">
-                <span>總金額</span>
-              </label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</div>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-slate-800 text-white text-xl font-bold py-3 pl-6 pr-10 rounded-xl border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-colors"
-                />
-                {/* 計算機按鈕 */}
-                <button 
-                  onClick={() => setShowCalculator(true)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors"
-                  title="開啟計算機"
-                >
-                  <Calculator size={16} />
-                </button>
-              </div>
-            </div>
-
-            {platform === '大車隊' && (
-              <div className="flex-1">
-                <label className="text-[10px] font-bold text-rose-400 mb-1 block uppercase">抽成 %</label>
-                <div className="relative">
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">%</div>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={commissionRate}
-                    onChange={(e) => setCommissionRate(e.target.value)}
-                    className="w-full bg-slate-800 text-rose-300 text-xl font-bold py-3 pl-3 pr-6 rounded-xl border-2 border-rose-900/30 focus:border-rose-500 focus:outline-none transition-colors text-center"
-                  />
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 w-full max-w-xs rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col">
+                        <div className="bg-slate-950 p-6 flex flex-col items-end justify-center border-b border-slate-800 h-28 relative">
+                            <button onClick={onClose} className="absolute top-4 left-4 text-slate-500 hover:text-slate-300" title="關閉">
+                                <Icons.X size={20} />
+                            </button>
+                            <div className="text-slate-400 text-xs h-4 mb-1">
+                                {resultValue !== null && pendingOperator ? `${resultValue} ${pendingOperator}` : ''}
+                            </div>
+                            <div className="text-4xl font-bold text-white tracking-wider truncate w-full text-right">{display}</div>
+                        </div>
+                        <div className="p-4 grid grid-cols-4 gap-3 bg-slate-900">
+                            <button onClick={handleClear} className={`${actionBtnClass} col-span-2`}>AC</button>
+                            <button onClick={handleBackspace} className={`${actionBtnClass}`}><Icons.Delete size={20}/></button>
+                            <button onClick={() => performOperation('/')} className={opBtnClass}>÷</button>
+                            <button onClick={() => inputDigit(7)} className={numBtnClass}>7</button>
+                            <button onClick={() => inputDigit(8)} className={numBtnClass}>8</button>
+                            <button onClick={() => inputDigit(9)} className={numBtnClass}>9</button>
+                            <button onClick={() => performOperation('*')} className={opBtnClass}>×</button>
+                            <button onClick={() => inputDigit(4)} className={numBtnClass}>4</button>
+                            <button onClick={() => inputDigit(5)} className={numBtnClass}>5</button>
+                            <button onClick={() => inputDigit(6)} className={numBtnClass}>6</button>
+                            <button onClick={() => performOperation('-')} className={opBtnClass}>-</button>
+                            <button onClick={() => inputDigit(1)} className={numBtnClass}>1</button>
+                            <button onClick={() => inputDigit(2)} className={numBtnClass}>2</button>
+                            <button onClick={() => inputDigit(3)} className={numBtnClass}>3</button>
+                            <button onClick={() => performOperation('+')} className={opBtnClass}>+</button>
+                            <button onClick={() => inputDigit(0)} className={`${numBtnClass} col-span-2`}>0</button>
+                            <button onClick={handleEqual} className={`${opBtnClass} bg-indigo-600 text-white border-transparent`}>=</button>
+                            <button onClick={handleConfirm} className="col-span-4 mt-2 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-900/50 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                <Icons.CheckCircle2 size={20} /> 確認帶入 (Enter)
+                            </button>
+                        </div>
+                    </div>
                 </div>
-              </div>
-            )}
+            );
+        };
 
-            {/* 入帳按鈕 - 永久顯示 */}
-            <div className="flex-none">
-                <label className="text-[10px] font-bold text-slate-500 mb-1 block text-center">入帳</label>
-                <button
-                onClick={() => setIsSettled(!isSettled)}
-                className={`w-12 h-[52px] rounded-xl flex items-center justify-center border-2 transition-all ${
-                  isSettled 
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' 
-                    : 'bg-slate-800 border-slate-600 text-slate-600'
-                }`}
-                >
-                  {isSettled ? <CheckCircle2 size={24} /> : <Clock size={24} />}
-                </button>
-            </div>
-          </div>
+        const App = () => {
+            const getTodayString = () => new Date().toISOString().split('T')[0];
 
-          <button
-            onClick={handleAddRecord}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold text-lg shadow-lg shadow-indigo-900/50 flex items-center justify-center gap-2 active:scale-95 transition-all"
-          >
-            <PlusCircle size={20} />
-            新增紀錄
-          </button>
-        </div>
+            // LocalStorage: 讀取
+            const [records, setRecords] = useState(() => {
+                const saved = localStorage.getItem('taxi_records');
+                return saved ? JSON.parse(saved) : [];
+            });
 
-        {/* 列表區域 */}
-        <div className="space-y-4 mt-8">
-           <div className="flex flex-col gap-1">
-             <h3 className="text-slate-400 font-medium px-1 flex justify-between items-center text-sm">
-               <span>營收明細 ({filteredRecords.length})</span>
-               <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">區間抽成: ${totalCommission}</span>
-             </h3>
-             <p className="text-[10px] text-slate-500 px-1">
-               顯示範圍: {filterStartDate} 至 {filterEndDate}
-             </p>
-           </div>
-           
-           {filteredRecords.length === 0 ? (
-             <div className="text-center py-10 text-slate-600 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
-               <p>此區間尚無紀錄</p>
-             </div>
-           ) : (
-             <div className="space-y-3">
-               {filteredRecords.map((record) => (
-                 <div key={record.id} className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${
-                        record.platform === '大車隊' ? 'bg-yellow-500/20 text-yellow-500' :
-                        record.platform === 'Line' ? 'bg-green-500/20 text-green-500' :
-                        record.platform === 'yuxi' ? 'bg-orange-500/20 text-orange-500' :
-                        record.platform === '呼叫' ? 'bg-blue-500/20 text-blue-500' :
-                        'bg-slate-700 text-slate-300'
-                      }`}>
-                        {record.platform.substring(0, 1)}
-                      </div>
-                      
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                           {record.commissionFee > 0 ? (
-                             <div className="flex items-baseline gap-1">
-                               <span className="text-slate-400 text-sm line-through">${record.grossAmount}</span>
-                               <span className="text-rose-400 text-xs font-mono">-{record.commissionRate}%</span>
-                               <span className="font-bold text-white text-lg ml-1">${record.netAmount}</span>
-                             </div>
-                           ) : (
-                             <span className="font-bold text-white text-lg">${record.netAmount}</span>
-                           )}
+            // LocalStorage: 存檔
+            useEffect(() => {
+                localStorage.setItem('taxi_records', JSON.stringify(records));
+            }, [records]);
+
+            const [filterStartDate, setFilterStartDate] = useState(getTodayString());
+            const [filterEndDate, setFilterEndDate] = useState(getTodayString());
+            const [recordDate, setRecordDate] = useState(getTodayString());
+            const [platform, setPlatform] = useState('大車隊');
+            const [paymentMethod, setPaymentMethod] = useState('現金');
+            const [amount, setAmount] = useState('');
+            const [commissionRate, setCommissionRate] = useState(15); 
+            const [isSettled, setIsSettled] = useState(true);
+            const [showCalculator, setShowCalculator] = useState(false);
+
+            const platforms = ['大車隊', 'Line', 'yuxi', '呼叫', '其他'];
+            const methods = [
+                { id: '現金', icon: <Icons.DollarSign size={16} /> },
+                { id: '悠遊卡', icon: <Icons.Wallet size={16} /> },
+                { id: '信用卡', icon: <Icons.CreditCard size={16} /> }
+            ];
+
+            useEffect(() => {
+                if (platform === '大車隊') {
+                    setCommissionRate(15);
+                } else {
+                    setCommissionRate(0);
+                }
+            }, [platform]);
+
+            useEffect(() => {
+                if (paymentMethod === '現金') {
+                    setIsSettled(true);
+                } else {
+                    setIsSettled(false);
+                }
+            }, [paymentMethod]);
+
+            const handleAddRecord = (e) => {
+                e.preventDefault();
+                if (!amount || isNaN(amount)) return;
+
+                const grossAmount = parseInt(amount);
+                const commissionFee = platform === '大車隊' ? Math.round(grossAmount * (commissionRate / 100)) : 0;
+                const netAmount = grossAmount - commissionFee;
+
+                const newRecord = {
+                    id: Date.now(),
+                    date: recordDate,
+                    time: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
+                    platform,
+                    paymentMethod,
+                    grossAmount,     
+                    commissionRate: platform === '大車隊' ? commissionRate : 0, 
+                    commissionFee,   
+                    netAmount,       
+                    isSettled: paymentMethod === '現金' ? true : isSettled,
+                };
+
+                setRecords([newRecord, ...records]);
+                setAmount('');
+            };
+
+            const toggleRecordSettled = (id) => {
+                setRecords(records.map(record => {
+                    if (record.id === id) {
+                        return { ...record, isSettled: !record.isSettled };
+                    }
+                    return record;
+                }));
+            };
+
+            const handleDelete = (id) => {
+                if(confirm('確定要刪除這筆紀錄嗎？')) {
+                    setRecords(records.filter(record => record.id !== id));
+                }
+            };
+
+            const filteredRecords = useMemo(() => {
+                return records.filter(record => {
+                    return record.date >= filterStartDate && record.date <= filterEndDate;
+                }).sort((a, b) => {
+                    if (a.date !== b.date) return b.date.localeCompare(a.date);
+                    return b.id - a.id;
+                });
+            }, [records, filterStartDate, filterEndDate]);
+
+            const totalGross = filteredRecords.reduce((sum, r) => sum + r.grossAmount, 0); 
+            const totalNet = filteredRecords.reduce((sum, r) => sum + r.netAmount, 0);     
+            const totalCommission = filteredRecords.reduce((sum, r) => sum + r.commissionFee, 0); 
+            const cashOnHand = filteredRecords.filter(r => r.paymentMethod === '現金').reduce((sum, r) => sum + r.grossAmount, 0);
+            const pendingSettlement = filteredRecords.filter(r => !r.isSettled).reduce((sum, r) => sum + r.netAmount, 0);
+
+            return (
+                <div className="min-h-screen bg-slate-950 text-slate-200 font-sans p-4 pb-24 relative">
+                    <CalculatorPopup 
+                        isOpen={showCalculator} 
+                        onClose={() => setShowCalculator(false)} 
+                        onApply={(val) => setAmount(val.toString())}
+                    />
+
+                    <div className="max-w-md mx-auto space-y-5">
+                        <header className="space-y-4 pt-2">
+                            <div className="flex justify-between items-center">
+                                <h1 className="text-2xl font-bold text-white tracking-wider flex items-center gap-2">
+                                    <Icons.Layers className="text-indigo-400" />
+                                    營收紀錄表
+                                </h1>
+                            </div>
+                            <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
+                                <div className="flex items-center gap-2 text-slate-400">
+                                    <Icons.Filter size={16} />
+                                    <span className="text-xs font-medium">統計區間</span>
+                                </div>
+                                <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                                    <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="bg-transparent text-white text-sm focus:outline-none w-28 text-center" />
+                                    <span className="text-slate-500">~</span>
+                                    <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="bg-transparent text-white text-sm focus:outline-none w-28 text-center" />
+                                </div>
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 shadow-lg relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 rounded-bl-full -mr-4 -mt-4"></div>
+                                <span className="text-xs text-slate-400 block mb-1">區間總流水 (未扣)</span>
+                                <span className="text-2xl font-bold text-white">${totalGross}</span>
+                            </div>
+                            <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-3 rounded-2xl border border-indigo-700/50 shadow-lg relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-bl-full -mr-4 -mt-4"></div>
+                                <span className="text-xs text-indigo-200 block mb-1">區間淨收入 (扣除後)</span>
+                                <span className="text-2xl font-bold text-white">${totalNet}</span>
+                            </div>
+                            <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex flex-col justify-center">
+                                <span className="text-xs text-emerald-400 mb-1">手頭現金 (Gross)</span>
+                                <span className="text-lg font-bold text-emerald-300">${cashOnHand}</span>
+                            </div>
+                            <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex flex-col justify-center">
+                                <span className="text-xs text-amber-400 mb-1">未入帳 (Net)</span>
+                                <span className="text-lg font-bold text-amber-300">${pendingSettlement}</span>
+                            </div>
                         </div>
-                        
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-indigo-300 font-mono bg-indigo-900/30 px-1 rounded">
-                            {record.date.substring(5)}
-                          </span>
-                          <span className={`px-1 rounded border ${
-                            record.paymentMethod === '現金' 
-                              ? 'border-emerald-500/30 text-emerald-400' 
-                              : 'border-blue-500/30 text-blue-400'
-                          }`}>
-                            {record.paymentMethod}
-                          </span>
-                          <span className="text-slate-500">{record.time}</span>
+
+                        <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl space-y-5 relative">
+                            <div className="absolute top-0 right-0 px-4 py-2 bg-slate-800 rounded-bl-2xl rounded-tr-2xl text-[10px] text-slate-400 font-mono tracking-widest border-l border-b border-slate-700">NEW RECORD</div>
+                            <div className="grid grid-cols-1 gap-4 mt-2">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 mb-2 block uppercase tracking-wider">平台</label>
+                                    <div className="grid grid-cols-5 gap-1">
+                                        {platforms.map((p) => (
+                                            <button key={p} onClick={() => setPlatform(p)} className={`py-2 px-0 rounded-lg text-xs font-medium transition-all duration-200 ${platform === p ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{p}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 mb-2 block uppercase tracking-wider">支付</label>
+                                    <div className="flex bg-slate-800 p-1 rounded-xl">
+                                        {methods.map((m) => (
+                                            <button key={m.id} onClick={() => setPaymentMethod(m.id)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all duration-200 ${paymentMethod === m.id ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>{m.icon}{m.id}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 mb-1 block uppercase tracking-wider flex items-center gap-1"><Icons.CalendarDays size={12} /> 營收日期 (補登可選)</label>
+                                <input type="date" value={recordDate} onChange={(e) => setRecordDate(e.target.value)} className="w-full bg-slate-800 text-white text-sm font-medium py-2 px-3 rounded-xl border border-slate-700 focus:border-indigo-500 focus:outline-none" />
+                            </div>
+                            <div className="flex items-end gap-3">
+                                <div className="flex-[2]">
+                                    <label className="text-[10px] font-bold text-slate-500 mb-1 block uppercase flex justify-between"><span>總金額</span></label>
+                                    <div className="relative">
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</div>
+                                        <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full bg-slate-800 text-white text-xl font-bold py-3 pl-6 pr-10 rounded-xl border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-colors" />
+                                        <button onClick={() => setShowCalculator(true)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors" title="開啟計算機"><Icons.Calculator size={16} /></button>
+                                    </div>
+                                </div>
+                                {platform === '大車隊' && (
+                                    <div className="flex-1">
+                                        <label className="text-[10px] font-bold text-rose-400 mb-1 block uppercase">抽成 %</label>
+                                        <div className="relative">
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">%</div>
+                                            <input type="number" inputMode="numeric" value={commissionRate} onChange={(e) => setCommissionRate(e.target.value)} className="w-full bg-slate-800 text-rose-300 text-xl font-bold py-3 pl-3 pr-6 rounded-xl border-2 border-rose-900/30 focus:border-rose-500 focus:outline-none transition-colors text-center" />
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="flex-none">
+                                    <label className="text-[10px] font-bold text-slate-500 mb-1 block text-center">入帳</label>
+                                    <button onClick={() => setIsSettled(!isSettled)} className={`w-12 h-[52px] rounded-xl flex items-center justify-center border-2 transition-all ${isSettled ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-600'}`}>
+                                        {isSettled ? <Icons.CheckCircle2 size={24} /> : <Icons.Clock size={24} />}
+                                    </button>
+                                </div>
+                            </div>
+                            <button onClick={handleAddRecord} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold text-lg shadow-lg shadow-indigo-900/50 flex items-center justify-center gap-2 active:scale-95 transition-all">
+                                <Icons.PlusCircle size={20} /> 新增紀錄
+                            </button>
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => toggleRecordSettled(record.id)}
-                        className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all ${
-                          record.isSettled 
-                            ? 'bg-emerald-900/20 border-emerald-800 text-emerald-400' 
-                            : 'bg-amber-900/20 border-amber-800 text-amber-500'
-                        }`}
-                      >
-                        {record.isSettled ? <CheckCircle2 size={16} /> : <Clock size={16} />}
-                      </button>
-                      
-                      <button 
-                        onClick={() => handleDelete(record.id)}
-                        className="w-8 h-8 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-full transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                        <div className="space-y-4 mt-8">
+                            <div className="flex flex-col gap-1">
+                                <h3 className="text-slate-400 font-medium px-1 flex justify-between items-center text-sm">
+                                    <span>營收明細 ({filteredRecords.length})</span>
+                                    <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">區間抽成: ${totalCommission}</span>
+                                </h3>
+                                <p className="text-[10px] text-slate-500 px-1">顯示範圍: {filterStartDate} 至 {filterEndDate}</p>
+                            </div>
+                            {filteredRecords.length === 0 ? (
+                                <div className="text-center py-10 text-slate-600 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed"><p>此區間尚無紀錄</p></div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {filteredRecords.map((record) => (
+                                        <div key={record.id} className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${record.platform === '大車隊' ? 'bg-yellow-500/20 text-yellow-500' : record.platform === 'Line' ? 'bg-green-500/20 text-green-500' : record.platform === 'yuxi' ? 'bg-orange-500/20 text-orange-500' : record.platform === '呼叫' ? 'bg-blue-500/20 text-blue-500' : 'bg-slate-700 text-slate-300'}`}>
+                                                    {record.platform.substring(0, 1)}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-2">
+                                                        {record.commissionFee > 0 ? (
+                                                            <div className="flex items-baseline gap-1">
+                                                                <span className="text-slate-400 text-sm line-through">${record.grossAmount}</span>
+                                                                <span className="text-rose-400 text-xs font-mono">-{record.commissionRate}%</span>
+                                                                <span className="font-bold text-white text-lg ml-1">${record.netAmount}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="font-bold text-white text-lg">${record.netAmount}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-xs">
+                                                        <span className="text-indigo-300 font-mono bg-indigo-900/30 px-1 rounded">{record.date.substring(5)}</span>
+                                                        <span className={`px-1 rounded border ${record.paymentMethod === '現金' ? 'border-emerald-500/30 text-emerald-400' : 'border-blue-500/30 text-blue-400'}`}>{record.paymentMethod}</span>
+                                                        <span className="text-slate-500">{record.time}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => toggleRecordSettled(record.id)} className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all ${record.isSettled ? 'bg-emerald-900/20 border-emerald-800 text-emerald-400' : 'bg-amber-900/20 border-amber-800 text-amber-500'}`}>
+                                                    {record.isSettled ? <Icons.CheckCircle2 size={16} /> : <Icons.Clock size={16} />}
+                                                </button>
+                                                <button onClick={() => handleDelete(record.id)} className="w-8 h-8 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-full transition-colors">
+                                                    <Icons.Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
-      </div>
-    </div>
-  );
-};
+                </div>
+            );
+        };
 
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
