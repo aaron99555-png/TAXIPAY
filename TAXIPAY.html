@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PlusCircle, Trash2, CheckCircle2, Wallet, CreditCard, Layers, Calendar, DollarSign, Clock, Filter, CalendarDays, Calculator, X, Delete } from 'lucide-react';
 
 // --- 子元件：計算機模組 ---
@@ -444,7 +444,7 @@ const App = () => {
               </div>
             )}
 
-            {/* 修改處：移除 paymentMethod !== '現金' 的判斷，讓按鈕永遠顯示 */}
+            {/* 入帳按鈕 - 永久顯示 */}
             <div className="flex-none">
                 <label className="text-[10px] font-bold text-slate-500 mb-1 block text-center">入帳</label>
                 <button
@@ -530,7 +530,6 @@ const App = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* 修改處：移除列表中的判斷，讓所有項目的入帳按鈕都顯示 */}
                       <button 
                         onClick={() => toggleRecordSettled(record.id)}
                         className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all ${
