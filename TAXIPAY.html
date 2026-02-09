@@ -20,6 +20,15 @@
             -webkit-appearance: none; 
             margin: 0; 
         }
+        /* 隱藏捲軸但保留功能 (Chrome/Safari) */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* 隱藏捲軸但保留功能 (Firefox) */
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
     </style>
 </head>
 <body>
@@ -236,8 +245,11 @@
                 localStorage.setItem('taxi_records', JSON.stringify(records));
             }, [records]);
 
+            // 狀態管理
             const [filterStartDate, setFilterStartDate] = useState(getTodayString());
             const [filterEndDate, setFilterEndDate] = useState(getTodayString());
+            const [filterPlatform, setFilterPlatform] = useState('全部'); // 新增：平台篩選狀態
+            
             const [recordDate, setRecordDate] = useState(getTodayString());
             const [platform, setPlatform] = useState('大車隊');
             const [paymentMethod, setPaymentMethod] = useState('現金');
@@ -247,6 +259,9 @@
             const [showCalculator, setShowCalculator] = useState(false);
 
             const platforms = ['大車隊', 'Line', 'yuxi', '呼叫', '其他'];
+            // 篩選用的選項 (多一個全部)
+            const filterPlatforms = ['全部', ...platforms];
+
             const methods = [
                 { id: '現金', icon: <Icons.DollarSign size={16} /> },
                 { id: '悠遊卡', icon: <Icons.Wallet size={16} /> },
@@ -309,14 +324,17 @@
                 }
             };
 
+            // 核心邏輯：雙重篩選 (日期 + 平台)
             const filteredRecords = useMemo(() => {
                 return records.filter(record => {
-                    return record.date >= filterStartDate && record.date <= filterEndDate;
+                    const dateMatch = record.date >= filterStartDate && record.date <= filterEndDate;
+                    const platformMatch = filterPlatform === '全部' || record.platform === filterPlatform;
+                    return dateMatch && platformMatch;
                 }).sort((a, b) => {
                     if (a.date !== b.date) return b.date.localeCompare(a.date);
                     return b.id - a.id;
                 });
-            }, [records, filterStartDate, filterEndDate]);
+            }, [records, filterStartDate, filterEndDate, filterPlatform]);
 
             const totalGross = filteredRecords.reduce((sum, r) => sum + r.grossAmount, 0); 
             const totalNet = filteredRecords.reduce((sum, r) => sum + r.netAmount, 0);     
@@ -332,7 +350,7 @@
                         onApply={(val) => setAmount(val.toString())}
                     />
 
-                    <div className="max-w-md mx-auto space-y-5">
+                    <div className="max-w-md mx-auto space-y-4">
                         <header className="space-y-4 pt-2">
                             <div className="flex justify-between items-center">
                                 <h1 className="text-2xl font-bold text-white tracking-wider flex items-center gap-2">
@@ -340,10 +358,12 @@
                                     營收紀錄表
                                 </h1>
                             </div>
+                            
+                            {/* 日期篩選區 */}
                             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
                                 <div className="flex items-center gap-2 text-slate-400">
                                     <Icons.Filter size={16} />
-                                    <span className="text-xs font-medium">統計區間</span>
+                                    <span className="text-xs font-medium">區間</span>
                                 </div>
                                 <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
                                     <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="bg-transparent text-white text-sm focus:outline-none w-28 text-center" />
@@ -351,12 +371,32 @@
                                     <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="bg-transparent text-white text-sm focus:outline-none w-28 text-center" />
                                 </div>
                             </div>
+
+                            {/* 新增：平台統計篩選列 (橫向捲動) */}
+                            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                                {filterPlatforms.map(p => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setFilterPlatform(p)}
+                                        className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                                            filterPlatform === p
+                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50'
+                                            : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
                         </header>
 
+                        {/* 統計儀表板 (根據篩選變動) */}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 shadow-lg relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 rounded-bl-full -mr-4 -mt-4"></div>
-                                <span className="text-xs text-slate-400 block mb-1">區間總流水 (未扣)</span>
+                                <span className="text-xs text-slate-400 block mb-1">
+                                    {filterPlatform === '全部' ? '區間總流水' : `${filterPlatform}總流水`}
+                                </span>
                                 <span className="text-2xl font-bold text-white">${totalGross}</span>
                             </div>
                             <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 p-3 rounded-2xl border border-indigo-700/50 shadow-lg relative overflow-hidden">
@@ -374,6 +414,7 @@
                             </div>
                         </div>
 
+                        {/* 輸入區域 (不變) */}
                         <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl space-y-5 relative">
                             <div className="absolute top-0 right-0 px-4 py-2 bg-slate-800 rounded-bl-2xl rounded-tr-2xl text-[10px] text-slate-400 font-mono tracking-widest border-l border-b border-slate-700">NEW RECORD</div>
                             <div className="grid grid-cols-1 gap-4 mt-2">
@@ -431,13 +472,15 @@
                         <div className="space-y-4 mt-8">
                             <div className="flex flex-col gap-1">
                                 <h3 className="text-slate-400 font-medium px-1 flex justify-between items-center text-sm">
-                                    <span>營收明細 ({filteredRecords.length})</span>
+                                    <span>
+                                        {filterPlatform === '全部' ? '' : `${filterPlatform}`}營收明細 ({filteredRecords.length})
+                                    </span>
                                     <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">區間抽成: ${totalCommission}</span>
                                 </h3>
                                 <p className="text-[10px] text-slate-500 px-1">顯示範圍: {filterStartDate} 至 {filterEndDate}</p>
                             </div>
                             {filteredRecords.length === 0 ? (
-                                <div className="text-center py-10 text-slate-600 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed"><p>此區間尚無紀錄</p></div>
+                                <div className="text-center py-10 text-slate-600 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed"><p>此區間/平台尚無紀錄</p></div>
                             ) : (
                                 <div className="space-y-3">
                                     {filteredRecords.map((record) => (
