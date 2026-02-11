@@ -6,6 +6,8 @@
     <title>每日車資收入紀錄表</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (Excel處理) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -42,7 +44,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useCallback } = React;
+        const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
         // --- Icons (SVG Components) ---
         const Icon = ({ path, size = 24, className = "" }) => (
@@ -77,10 +79,12 @@
             X: (props) => <Icon path={<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>} {...props} />,
             Delete: (props) => <Icon path={<><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></>} {...props} />,
             RefreshCcw: (props) => <Icon path={<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>} {...props} />,
-            AlertTriangle: (props) => <Icon path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>} {...props} />
+            AlertTriangle: (props) => <Icon path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>} {...props} />,
+            Upload: (props) => <Icon path={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></>} {...props} />,
+            Download: (props) => <Icon path={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></>} {...props} />
         };
 
-        // --- 子元件：計算機模組 ---
+        // --- 子元件：計算機模組 (無變更) ---
         const CalculatorPopup = ({ isOpen, onClose, onApply }) => {
             const [display, setDisplay] = useState('0');
             const [waitingForOperand, setWaitingForOperand] = useState(true);
@@ -243,13 +247,12 @@
         const App = () => {
             const getTodayString = () => new Date().toISOString().split('T')[0];
 
-            // LocalStorage: 讀取
+            // LocalStorage
             const [records, setRecords] = useState(() => {
                 const saved = localStorage.getItem('taxi_records');
                 return saved ? JSON.parse(saved) : [];
             });
 
-            // LocalStorage: 存檔
             useEffect(() => {
                 localStorage.setItem('taxi_records', JSON.stringify(records));
             }, [records]);
@@ -260,7 +263,6 @@
             const [filterPlatform, setFilterPlatform] = useState('全部'); 
             const [selectedIds, setSelectedIds] = useState(new Set()); 
             
-            // 刪除確認視窗狀態
             const [showDeleteModal, setShowDeleteModal] = useState(false);
             const [deleteTargetId, setDeleteTargetId] = useState(null);
             
@@ -271,6 +273,9 @@
             const [commissionRate, setCommissionRate] = useState(15); 
             const [isSettled, setIsSettled] = useState(true);
             const [showCalculator, setShowCalculator] = useState(false);
+            
+            // 隱藏的檔案輸入
+            const fileInputRef = useRef(null);
 
             const platforms = ['大車隊', 'Line', 'yuxi', '呼叫', '其他'];
             const filterPlatforms = ['全部', ...platforms];
@@ -297,12 +302,102 @@
                 }
             }, [paymentMethod]);
 
+            // --- 匯出 Excel ---
+            const handleExport = () => {
+                const exportData = records.map(r => ({
+                    'ID': r.id,
+                    '營收日期': r.date,
+                    '時間': r.time,
+                    '平台': r.platform,
+                    '支付方式': r.paymentMethod,
+                    '總金額': r.grossAmount,
+                    '抽成比率': r.commissionRate,
+                    '抽成金額': r.commissionFee,
+                    '實收金額': r.netAmount,
+                    '已入帳': r.isSettled ? '是' : '否'
+                }));
+
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "營收紀錄");
+                
+                // 檔名加上日期
+                XLSX.writeFile(workbook, `每日車資紀錄_${getTodayString()}.xlsx`);
+            };
+
+            // --- 匯入 Excel ---
+            const handleImportClick = () => {
+                fileInputRef.current.click();
+            };
+
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const data = evt.target.result;
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        const wsname = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[wsname];
+                        const json = XLSX.utils.sheet_to_json(worksheet);
+
+                        if (json.length === 0) {
+                            alert('檔案內容為空或格式錯誤');
+                            return;
+                        }
+
+                        // 轉換並合併資料
+                        const importedRecords = json.map(row => ({
+                            id: row['ID'] || Date.now() + Math.random(), // 防止 ID 遺失
+                            date: row['營收日期'] || getTodayString(),
+                            time: row['時間'] || '00:00',
+                            platform: row['平台'] || '其他',
+                            paymentMethod: row['支付方式'] || '現金',
+                            grossAmount: parseInt(row['總金額']) || 0,
+                            commissionRate: parseInt(row['抽成比率']) || 0,
+                            commissionFee: parseInt(row['抽成金額']) || 0,
+                            netAmount: parseInt(row['實收金額']) || 0,
+                            isSettled: row['已入帳'] === '是'
+                        }));
+
+                        // 合併資料 (避免 ID 重複)
+                        const currentIds = new Set(records.map(r => r.id));
+                        const newRecords = [...records];
+                        let addedCount = 0;
+
+                        importedRecords.forEach(rec => {
+                            if (!currentIds.has(rec.id)) {
+                                newRecords.push(rec);
+                                addedCount++;
+                            }
+                        });
+
+                        // 重新排序
+                        newRecords.sort((a, b) => {
+                            if (a.date !== b.date) return b.date.localeCompare(a.date);
+                            return b.id - a.id;
+                        });
+
+                        setRecords(newRecords);
+                        alert(`匯入成功！新增了 ${addedCount} 筆紀錄。`);
+                    } catch (error) {
+                        console.error(error);
+                        alert('匯入失敗，請確認檔案格式是否為 Excel (.xlsx)');
+                    }
+                    // 清空 input 讓同一檔案可重複選取
+                    e.target.value = null;
+                };
+                reader.readAsBinaryString(file);
+            };
+
             // --- 計算預計撥款日邏輯 ---
             const getEstimatedPaymentDate = (dateStr, platform) => {
                 if (!['大車隊', 'Line', 'yuxi'].includes(platform)) return null;
 
                 const date = new Date(dateStr);
-                const day = date.getDay(); // 0-6 (Sun=0, Mon=1...Sat=6)
+                const day = date.getDay(); 
                 let addDays = 0;
 
                 if (platform === '大車隊') {
@@ -358,14 +453,12 @@
                 }));
             };
 
-            // 觸發刪除 (開啟確認視窗)
             const handleRequestDelete = (id, e) => {
                 e.stopPropagation(); 
                 setDeleteTargetId(id);
                 setShowDeleteModal(true);
             };
 
-            // 確認執行刪除
             const handleConfirmDelete = () => {
                 if (deleteTargetId) {
                     setRecords(records.filter(record => record.id !== deleteTargetId));
@@ -379,10 +472,8 @@
                 setDeleteTargetId(null);
             };
 
-            // 監聽刪除確認視窗的鍵盤事件
             useEffect(() => {
                 if (!showDeleteModal) return;
-
                 const handleKeyDown = (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -393,7 +484,6 @@
                         setDeleteTargetId(null);
                     }
                 };
-
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [showDeleteModal, deleteTargetId, records, selectedIds]); 
@@ -449,6 +539,15 @@
                         onApply={(val) => setAmount(val.toString())}
                     />
 
+                    {/* 隱藏的檔案上傳 Input */}
+                    <input 
+                        type="file" 
+                        accept=".xlsx, .xls" 
+                        ref={fileInputRef} 
+                        onChange={handleFileChange} 
+                        style={{ display: 'none' }} 
+                    />
+
                     {/* 自製刪除確認視窗 */}
                     {showDeleteModal && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -498,6 +597,23 @@
                                     <Icons.Layers className="text-indigo-400" />
                                     營收紀錄表
                                 </h1>
+                                {/* 匯入匯出按鈕區 */}
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={handleImportClick}
+                                        className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-bold transition-colors border border-slate-700"
+                                        title="匯入 Excel"
+                                    >
+                                        <Icons.Upload size={16} /> 匯入
+                                    </button>
+                                    <button 
+                                        onClick={handleExport}
+                                        className="flex items-center gap-1 bg-emerald-900/30 hover:bg-emerald-800/50 text-emerald-400 px-3 py-2 rounded-lg text-xs font-bold transition-colors border border-emerald-800/30"
+                                        title="匯出 Excel"
+                                    >
+                                        <Icons.Download size={16} /> 匯出
+                                    </button>
+                                </div>
                             </div>
                             
                             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
