@@ -76,7 +76,8 @@
             Calculator: (props) => <Icon path={<><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></>} {...props} />,
             X: (props) => <Icon path={<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>} {...props} />,
             Delete: (props) => <Icon path={<><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></>} {...props} />,
-            RefreshCcw: (props) => <Icon path={<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>} {...props} />
+            RefreshCcw: (props) => <Icon path={<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>} {...props} />,
+            AlertTriangle: (props) => <Icon path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>} {...props} />
         };
 
         // --- 子元件：計算機模組 ---
@@ -257,7 +258,11 @@
             const [filterStartDate, setFilterStartDate] = useState(getTodayString());
             const [filterEndDate, setFilterEndDate] = useState(getTodayString());
             const [filterPlatform, setFilterPlatform] = useState('全部'); 
-            const [selectedIds, setSelectedIds] = useState(new Set()); // 新增：選取狀態
+            const [selectedIds, setSelectedIds] = useState(new Set()); 
+            
+            // 刪除確認視窗狀態
+            const [showDeleteModal, setShowDeleteModal] = useState(false);
+            const [deleteTargetId, setDeleteTargetId] = useState(null);
             
             const [recordDate, setRecordDate] = useState(getTodayString());
             const [platform, setPlatform] = useState('大車隊');
@@ -292,6 +297,32 @@
                 }
             }, [paymentMethod]);
 
+            // --- 計算預計撥款日邏輯 ---
+            const getEstimatedPaymentDate = (dateStr, platform) => {
+                if (!['大車隊', 'Line', 'yuxi'].includes(platform)) return null;
+
+                const date = new Date(dateStr);
+                const day = date.getDay(); // 0-6 (Sun=0, Mon=1...Sat=6)
+                let addDays = 0;
+
+                if (platform === '大車隊') {
+                    if (day >= 1 && day <= 4) addDays = (7 - day) + 3;
+                    else addDays = (day === 0 ? 0 : 7 - day) + 5;
+                } else if (platform === 'Line') {
+                    if (day >= 1 && day <= 4) addDays = (7 - day) + 2;
+                    else addDays = (day === 0 ? 0 : 7 - day) + 5;
+                } else if (platform === 'yuxi') {
+                    if (day >= 1 && day <= 3) addDays = (7 - day) + 1;
+                    else addDays = (day === 0 ? 0 : 7 - day) + 4;
+                }
+
+                const resultDate = new Date(date);
+                resultDate.setDate(resultDate.getDate() + addDays);
+                const m = (resultDate.getMonth() + 1).toString().padStart(2, '0');
+                const d = resultDate.getDate().toString().padStart(2, '0');
+                return `${m}-${d}`;
+            };
+
             const handleAddRecord = (e) => {
                 e.preventDefault();
                 if (!amount || isNaN(amount)) return;
@@ -318,7 +349,7 @@
             };
 
             const toggleRecordSettled = (id, e) => {
-                e.stopPropagation(); // 防止觸發選取
+                e.stopPropagation(); 
                 setRecords(records.map(record => {
                     if (record.id === id) {
                         return { ...record, isSettled: !record.isSettled };
@@ -327,20 +358,46 @@
                 }));
             };
 
-            const handleDelete = (id, e) => {
-                e.stopPropagation(); // 防止觸發選取
-                if(confirm('確定要刪除這筆紀錄嗎？')) {
-                    setRecords(records.filter(record => record.id !== id));
-                    // 刪除後要從選取清單移除
-                    if (selectedIds.has(id)) {
+            // 觸發刪除 (開啟確認視窗)
+            const handleRequestDelete = (id, e) => {
+                e.stopPropagation(); 
+                setDeleteTargetId(id);
+                setShowDeleteModal(true);
+            };
+
+            // 確認執行刪除
+            const handleConfirmDelete = () => {
+                if (deleteTargetId) {
+                    setRecords(records.filter(record => record.id !== deleteTargetId));
+                    if (selectedIds.has(deleteTargetId)) {
                         const newSelected = new Set(selectedIds);
-                        newSelected.delete(id);
+                        newSelected.delete(deleteTargetId);
                         setSelectedIds(newSelected);
                     }
                 }
+                setShowDeleteModal(false);
+                setDeleteTargetId(null);
             };
 
-            // 核心邏輯：雙重篩選 (日期 + 平台)
+            // 監聽刪除確認視窗的鍵盤事件
+            useEffect(() => {
+                if (!showDeleteModal) return;
+
+                const handleKeyDown = (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmDelete();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowDeleteModal(false);
+                        setDeleteTargetId(null);
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [showDeleteModal, deleteTargetId, records, selectedIds]); 
+
             const filteredRecords = useMemo(() => {
                 return records.filter(record => {
                     const dateMatch = record.date >= filterStartDate && record.date <= filterEndDate;
@@ -352,11 +409,10 @@
                 });
             }, [records, filterStartDate, filterEndDate, filterPlatform]);
 
-            // 計算選取總額
             const selectedTotal = useMemo(() => {
                 return filteredRecords
                     .filter(r => selectedIds.has(r.id))
-                    .reduce((sum, r) => sum + r.netAmount, 0); // 核對時通常對實收金額
+                    .reduce((sum, r) => sum + r.netAmount, 0); 
             }, [filteredRecords, selectedIds]);
 
             const toggleSelection = (id) => {
@@ -379,11 +435,10 @@
             const cashOnHand = filteredRecords.filter(r => r.paymentMethod === '現金').reduce((sum, r) => sum + r.grossAmount, 0);
             const pendingSettlement = filteredRecords.filter(r => !r.isSettled).reduce((sum, r) => sum + r.netAmount, 0);
 
-            // 輔助函式：取得標籤顏色 (高反差)
             const getPaymentTagClass = (method) => {
                 if (method === '現金') return 'bg-emerald-600 text-white border-transparent font-bold shadow-sm shadow-emerald-900/50';
                 if (method === '悠遊卡') return 'bg-sky-600 text-white border-transparent font-bold shadow-sm shadow-sky-900/50';
-                return 'bg-indigo-600 text-white border-transparent font-bold shadow-sm shadow-indigo-900/50'; // 信用卡
+                return 'bg-indigo-600 text-white border-transparent font-bold shadow-sm shadow-indigo-900/50'; 
             };
 
             return (
@@ -394,7 +449,33 @@
                         onApply={(val) => setAmount(val.toString())}
                     />
 
-                    {/* 浮動核對工具列 (當有選取時顯示) */}
+                    {/* 自製刪除確認視窗 */}
+                    {showDeleteModal && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                            <div className="bg-slate-900 w-full max-w-sm rounded-2xl border border-slate-700 shadow-2xl p-6 space-y-4 transform scale-100 animate-in zoom-in-95 duration-200">
+                                <div className="flex items-center gap-3 text-red-500 mb-2">
+                                    <Icons.AlertTriangle size={28} />
+                                    <h3 className="text-xl font-bold text-white">確認刪除</h3>
+                                </div>
+                                <p className="text-slate-400">確定要刪除這筆紀錄嗎？<br/>此動作無法復原。</p>
+                                <div className="flex gap-3 pt-4">
+                                    <button 
+                                        onClick={() => setShowDeleteModal(false)}
+                                        className="flex-1 py-3 rounded-xl font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+                                    >
+                                        取消 (Esc)
+                                    </button>
+                                    <button 
+                                        onClick={handleConfirmDelete}
+                                        className="flex-1 py-3 rounded-xl font-bold text-white bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/50 transition-colors"
+                                    >
+                                        刪除 (Enter)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {selectedIds.size > 0 && (
                         <div className="fixed bottom-4 left-4 right-4 bg-slate-800 p-4 rounded-2xl border border-indigo-500/50 shadow-2xl shadow-black z-40 flex items-center justify-between animate-[slideUp_0.3s_ease-out]">
                             <div className="flex flex-col">
@@ -419,7 +500,6 @@
                                 </h1>
                             </div>
                             
-                            {/* 日期篩選區 */}
                             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 shadow-sm">
                                 <div className="flex items-center gap-2 text-slate-400">
                                     <Icons.Filter size={16} />
@@ -432,7 +512,6 @@
                                 </div>
                             </div>
 
-                            {/* 平台統計篩選列 */}
                             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                                 {filterPlatforms.map(p => (
                                     <button
@@ -450,7 +529,6 @@
                             </div>
                         </header>
 
-                        {/* 統計儀表板 */}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 shadow-lg relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-16 h-16 bg-white/5 rounded-bl-full -mr-4 -mt-4"></div>
@@ -474,7 +552,6 @@
                             </div>
                         </div>
 
-                        {/* 輸入區域 */}
                         <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl space-y-5 relative">
                             <div className="absolute top-0 right-0 px-4 py-2 bg-slate-800 rounded-bl-2xl rounded-tr-2xl text-[10px] text-slate-400 font-mono tracking-widest border-l border-b border-slate-700">NEW RECORD</div>
                             <div className="grid grid-cols-1 gap-4 mt-2">
@@ -553,6 +630,7 @@
                                 <div className="space-y-3">
                                     {filteredRecords.map((record) => {
                                         const isSelected = selectedIds.has(record.id);
+                                        const estPaymentDate = getEstimatedPaymentDate(record.date, record.platform);
                                         return (
                                             <div 
                                                 key={record.id} 
@@ -586,12 +664,16 @@
                                                                 <span className="font-bold text-white text-lg">${record.netAmount}</span>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-2 text-xs">
+                                                        <div className="flex items-center gap-2 text-xs flex-wrap">
                                                             <span className="text-indigo-300 font-mono bg-indigo-900/30 px-1 rounded">{record.date.substring(5)}</span>
-                                                            {/* 高反差支付標籤 */}
                                                             <span className={`px-2 py-0.5 rounded ${getPaymentTagClass(record.paymentMethod)}`}>
                                                                 {record.paymentMethod}
                                                             </span>
+                                                            {record.paymentMethod !== '現金' && estPaymentDate && (
+                                                                <span className="text-[10px] text-teal-300 bg-teal-900/30 px-1.5 rounded border border-teal-700/50">
+                                                                    預撥: {estPaymentDate}
+                                                                </span>
+                                                            )}
                                                             <span className="text-slate-500">{record.time}</span>
                                                         </div>
                                                     </div>
@@ -600,7 +682,7 @@
                                                     <button onClick={(e) => toggleRecordSettled(record.id, e)} className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all ${record.isSettled ? 'bg-emerald-900/20 border-emerald-800 text-emerald-400' : 'bg-amber-900/20 border-amber-800 text-amber-500'}`}>
                                                         {record.isSettled ? <Icons.CheckCircle2 size={16} /> : <Icons.Clock size={16} />}
                                                     </button>
-                                                    <button onClick={(e) => handleDelete(record.id, e)} className="w-8 h-8 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-full transition-colors">
+                                                    <button onClick={(e) => handleRequestDelete(record.id, e)} className="w-8 h-8 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-400/10 rounded-full transition-colors">
                                                         <Icons.Trash2 size={16} />
                                                     </button>
                                                 </div>
